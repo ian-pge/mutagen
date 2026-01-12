@@ -14,7 +14,7 @@ fi
 # Prompt for RunPod IP and Port
 read -p "Enter RunPod IP address: " RUNPOD_IP
 read -p "Enter RunPod Port: " RUNPOD_PORT
-read -p "Enter Web Port to forward (e.g., 7007): " WEB_PORT
+read -p "Enter Web Port to forward (e.g., 7007, or press Enter to skip): " WEB_PORT
 
 # Define paths
 LOCAL_PATH="/home/ian/Perso/startup/datasets/mutagen/"
@@ -31,7 +31,12 @@ REMOTE_SYNC_URL="${SSH_TARGET}:${REMOTE_PATH}"
 echo "Configuring Mutagen..."
 echo "Local Path: $LOCAL_PATH"
 echo "Remote Sync: $REMOTE_SYNC_URL"
-echo "Forwarding: localhost:$WEB_PORT -> remote:localhost:$WEB_PORT"
+
+if [[ -n "$WEB_PORT" ]]; then
+    echo "Forwarding: localhost:$WEB_PORT -> remote:localhost:$WEB_PORT"
+else
+    echo "Web Port Forwarding: SKIPPED"
+fi
 
 # Verify SSH connectivity
 echo "Verifying SSH connection..."
@@ -61,21 +66,25 @@ if ! mutagen sync create --name "$SYNC_SESSION_NAME" "$LOCAL_PATH" "$REMOTE_SYNC
 fi
 
 # --- Forwarding Session ---
-if mutagen forward list "$FORWARD_SESSION_NAME" >/dev/null 2>&1; then
-  echo "Terminating existing forward session '$FORWARD_SESSION_NAME'..."
-  mutagen forward terminate "$FORWARD_SESSION_NAME"
-  sleep 1
-fi
+# Only proceed if WEB_PORT is set
+if [[ -n "$WEB_PORT" ]]; then
+    if mutagen forward list "$FORWARD_SESSION_NAME" >/dev/null 2>&1; then
+      echo "Terminating existing forward session '$FORWARD_SESSION_NAME'..."
+      mutagen forward terminate "$FORWARD_SESSION_NAME"
+      sleep 1
+    fi
 
-echo "Creating forward session..."
-if ! mutagen forward create --name "$FORWARD_SESSION_NAME" "tcp:localhost:$WEB_PORT" "${SSH_TARGET}:tcp:localhost:$WEB_PORT"; then
-    echo "Error: Failed to create mutagen forward session."
-    echo "Note: Ensure the SSH connection string is correct and Mutagen supports it."
-    exit 1
+    echo "Creating forward session..."
+    if ! mutagen forward create --name "$FORWARD_SESSION_NAME" "tcp:localhost:$WEB_PORT" "${SSH_TARGET}:tcp:localhost:$WEB_PORT"; then
+        echo "Error: Failed to create mutagen forward session."
+        echo "Note: Ensure the SSH connection string is correct and Mutagen supports it."
+        # We don't exit here, so the sync can still continue if forwarding fails
+    else
+        echo "Forwarding established: http://localhost:$WEB_PORT"
+    fi
 fi
-
-echo "Forwarding established: http://localhost:$WEB_PORT"
 
 # Monitor the session
 echo "Monitoring sync session (Forwarding is active in background)."
 mutagen sync monitor "$SYNC_SESSION_NAME"
+
